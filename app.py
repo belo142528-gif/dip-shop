@@ -108,7 +108,8 @@ def ask(prompt, temperature=0.5, max_tokens=400):
     except Exception as e:
         print(f"Ошибка: {e}")
         return 'Извините, консультант временно недоступен.'
-        # ========== УМНЫЙ ПОИСК ПО ТОВАРАМ (БЕЗ AI) ==========
+        
+# ========== УМНЫЙ ПОИСК ПО ТОВАРАМ (БЕЗ AI) ==========
 def search_products(query):
     """Ищет товары по запросу (быстро, без AI)"""
     query_words = query.lower().split()
