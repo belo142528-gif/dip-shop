@@ -48,7 +48,7 @@ def ask(prompt, temperature=0.7, max_tokens=600):
             'Authorization': f'Bearer {OPENROUTER_KEY}',
             'Content-Type': 'application/json; charset=utf-8',
             'HTTP-Referer': 'https://dip-shop.onrender.com',
-            'X-Title': 'Dip-Shop'
+            'X-Title': 'еlli-Shop'
         }
         payload = {
             'model': 'deepseek/deepseek-r1',
