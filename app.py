@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 from flask import Flask, request, jsonify, Response
 
 SHOP_NAME = "TechStore"
+
 PHONES = {
     "techstar a1": {"model": "TechStar A1", "screen": "6.1\" AMOLED 90Hz", "cpu": "MediaTek Helio G85", "ram": "4GB", "storage": "64GB", "camera": "50MP+2MP", "battery": "4500mAh", "price": 8490, "stock": "да"},
     "techstar a2": {"model": "TechStar A2", "screen": "6.3\" AMOLED 120Hz", "cpu": "Snapdragon 680", "ram": "6GB", "storage": "128GB", "camera": "64MP+8MP+2MP", "battery": "5000mAh", "price": 12990, "stock": "да"},
@@ -17,6 +18,7 @@ PHONES = {
     "maxpower m2": {"model": "MaxPower M2", "screen": "6.7\" IPS 90Hz", "cpu": "Snapdragon 695", "ram": "6GB", "storage": "128GB", "camera": "48MP+12MP", "battery": "7000mAh", "price": 11490, "stock": "да"},
     "primevision p1": {"model": "PrimeVision P1", "screen": "6.2\" OLED 120Hz", "cpu": "Tensor G2", "ram": "6GB", "storage": "128GB", "camera": "50MP+12MP", "battery": "4300mAh", "price": 14990, "stock": "да"},
 }
+
 ACCESSORIES = {
     "чехол techstar a1": {"name": "Чехол TechStar A1", "type": "Силикон", "price": 290, "stock": "да"},
     "чехол techstar a2": {"name": "Чехол TechStar A2", "type": "Силикон", "price": 310, "stock": "да"},
@@ -47,6 +49,7 @@ ACCESSORIES = {
     "magdesk trio": {"name": "MagDesk Trio", "type": "Магнитная станция", "power": "15W+5W+3W", "feature": "Телефон+часы+наушники", "price": 5990, "stock": "да"},
     "magflex cable": {"name": "MagFlex Cable", "type": "Магнитный кабель", "power": "5W", "feature": "Type-C/Lightning", "price": 790, "stock": "да"},
 }
+
 SHOP_ITEMS = {}
 SHOP_ITEMS.update(PHONES)
 SHOP_ITEMS.update(ACCESSORIES)
@@ -87,7 +90,8 @@ def ask(prompt, temperature=0.5, max_tokens=400):
     except Exception as e:
         print(f"Ошибка: {e}")
         return 'Извините, консультант временно недоступен.'
-        def search_products(query):
+
+def search_products(query):
     query_words = query.lower().split()
     results = []
     for key, info in SHOP_ITEMS.items():
@@ -120,27 +124,9 @@ def format_product_text(key, info):
         return text
     else:
         return f"{key}: {info.get('price', 'цена не указана')} ₽"
-        dialogue_history = []
+
+dialogue_history = []
 last_greeting = None
-app = Flask(__name__)
-
-HTML = '<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Элли-Консультант</title><style>body{margin:0;padding:0;background:#f0f4f8;color:#333;font-family:system-ui;height:100vh;display:flex;flex-direction:column}#header{background:#2563eb;color:#fff;padding:15px;text-align:center;font-size:18px;font-weight:bold}#chat{flex:1;overflow-y:auto;padding:15px;background:#fff;margin:10px;border-radius:15px;box-shadow:0 2px 10px rgba(0,0,0,0.08)}.msg{margin:8px 0;padding:10px 15px;border-radius:15px;max-width:85%;word-wrap:break-word}.user{background:#2563eb;color:#fff;margin-left:auto;text-align:right}.elli{background:#e8f0fe;color:#333;margin-right:auto}#form{display:flex;padding:10px;background:#fff;border-top:1px solid #e5e7eb}#input{flex:1;padding:12px;border:1px solid #d1d5db;border-radius:25px;font-size:16px}#send{margin-left:8px;padding:12px 25px;border:none;border-radius:25px;background:#2563eb;color:#fff;font-size:16px}</style></head><body><div id="header">🛍️ ' + SHOP_NAME + ' — Онлайн-консультант Элли</div><div id="chat"><div class="msg elli">Здравствуйте! Я Элли, виртуальный консультант магазина «' + SHOP_NAME + '». Спросите меня о товарах, ценах, доставке!</div></div><form id="form" onsubmit="sendMsg(event)"><input id="input" type="text" placeholder="Напишите вопрос..." autofocus><button id="send" type="submit">→</button></form><script>function add(text,cls){var d=document.createElement("div");d.className="msg "+cls;d.textContent=text;document.getElementById("chat").appendChild(d);document.getElementById("chat").scrollTop=document.getElementById("chat").scrollHeight}async function sendMsg(e){e.preventDefault();var input=document.getElementById("input");var text=input.value.trim();if(!text)return;add(text,"user");input.value="";try{var r=await fetch("/chat",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({message:text})});var d=await r.json();add(d.reply,"elli")}catch(err){add("Ошибка связи...","elli")}}</script></body></html>'
-
-@app.route('/')
-def home():
-    return HTML
-
-@app.route('/chat', methods=['POST'])
-def chat():
-    data = request.json
-    user_text = data.get('message', '')
-    reply = generate_response(user_text)
-    return jsonify({'reply': reply})
-
-if __name__ == '__main__':
-    print(f"🛍️ Элли-консультант магазина «{SHOP_NAME}» запущена.")
-    port = int(os.environ.get('PORT', 5000))
-    app.run(host='0.0.0.0', port=port)
 
 def generate_response(user_text):
     global dialogue_history, last_greeting
@@ -200,3 +186,23 @@ def generate_response(user_text):
     reply = ask(prompt, temperature=0.5, max_tokens=100)
     dialogue_history.append(f"Элли: {reply}")
     return reply
+
+app = Flask(__name__)
+
+HTML = '<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Элли-Консультант</title><style>body{margin:0;padding:0;background:#f0f4f8;color:#333;font-family:system-ui;height:100vh;display:flex;flex-direction:column}#header{background:#2563eb;color:#fff;padding:15px;text-align:center;font-size:18px;font-weight:bold}#chat{flex:1;overflow-y:auto;padding:15px;background:#fff;margin:10px;border-radius:15px;box-shadow:0 2px 10px rgba(0,0,0,0.08)}.msg{margin:8px 0;padding:10px 15px;border-radius:15px;max-width:85%;word-wrap:break-word}.user{background:#2563eb;color:#fff;margin-left:auto;text-align:right}.elli{background:#e8f0fe;color:#333;margin-right:auto}#form{display:flex;padding:10px;background:#fff;border-top:1px solid #e5e7eb}#input{flex:1;padding:12px;border:1px solid #d1d5db;border-radius:25px;font-size:16px}#send{margin-left:8px;padding:12px 25px;border:none;border-radius:25px;background:#2563eb;color:#fff;font-size:16px}</style></head><body><div id="header">🛍️ ' + SHOP_NAME + ' — Онлайн-консультант Элли</div><div id="chat"><div class="msg elli">Здравствуйте! Я Элли, виртуальный консультант магазина «' + SHOP_NAME + '». Спросите меня о товарах, ценах, доставке!</div></div><form id="form" onsubmit="sendMsg(event)"><input id="input" type="text" placeholder="Напишите вопрос..." autofocus><button id="send" type="submit">→</button></form><script>function add(text,cls){var d=document.createElement("div");d.className="msg "+cls;d.textContent=text;document.getElementById("chat").appendChild(d);document.getElementById("chat").scrollTop=document.getElementById("chat").scrollHeight}async function sendMsg(e){e.preventDefault();var input=document.getElementById("input");var text=input.value.trim();if(!text)return;add(text,"user");input.value="";try{var r=await fetch("/chat",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({message:text})});var d=await r.json();add(d.reply,"elli")}catch(err){add("Ошибка связи...","elli")}}</script></body></html>'
+
+@app.route('/')
+def home():
+    return HTML
+
+@app.route('/chat', methods=['POST'])
+def chat():
+    data = request.json
+    user_text = data.get('message', '')
+    reply = generate_response(user_text)
+    return jsonify({'reply': reply})
+
+if __name__ == '__main__':
+    print(f"🛍️ Элли-консультант магазина «{SHOP_NAME}» запущена.")
+    port = int(os.environ.get('PORT', 5000))
+    app.run(host='0.0.0.0', port=port)
