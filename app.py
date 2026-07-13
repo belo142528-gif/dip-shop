@@ -10,6 +10,8 @@ app.secret_key = os.urandom(24)
 
 SHOP_NAME = "TechStore"
 ADMIN_PASSWORD = "12345"
+OPENROUTER_KEY = os.environ.get('OPENROUTER_KEY', '')
+OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions'
 
 def init_db():
     conn = sqlite3.connect('products.db')
@@ -81,14 +83,31 @@ if len(get_all_products()) == 0:
     ]
     for p in test_products:
         add_product(*p)
-
-OPENROUTER_KEY = os.environ.get('OPENROUTER_KEY', '')
-OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions'
-
-def ask(prompt, temperature=0.5, max_tokens=200):
+        def ask_ai(user_message, dialogue_history, products_context):
     if not OPENROUTER_KEY:
         return None
     try:
+        system_prompt = f"""Ты — Элли, дружелюбный консультант интернет-магазина «{SHOP_NAME}». 
+Твоя задача — помогать клиентам выбирать товары, отвечать на вопросы о наличии, ценах, характеристиках, доставке и оплате.
+
+ПРАВИЛА:
+1. Отвечай коротко и по делу (1-3 предложения).
+2. Если клиент спрашивает о товарах — используй ДАННЫЕ ИЗ БАЗЫ ниже.
+3. Если точного товара нет в базе — предложи похожие.
+4. Если клиент просит совет — посоветуй на основе его потребностей.
+5. Не выдумывай товары, которых нет в базе.
+6. Для вопросов о доставке/оплате: Доставка по РФ — 3-7 дней (Почта, СДЭК). Оплата картой онлайн или наличными при получении. Возврат — 14 дней. Гарантия до 2 лет.
+7. Если клиент спрашивает то, чего точно нет в ассортименте (ноутбуки, планшеты) — скажи, что их нет, и предложи смартфоны/наушники/зарядки.
+
+БАЗА ТОВАРОВ (цены в рублях):
+{products_context}
+
+ИСТОРИЯ ДИАЛОГА:
+{dialogue_history}
+
+Клиент: {user_message}
+Элли:"""
+
         headers = {
             'Authorization': f'Bearer {OPENROUTER_KEY}',
             'Content-Type': 'application/json; charset=utf-8',
@@ -96,13 +115,12 @@ def ask(prompt, temperature=0.5, max_tokens=200):
             'X-Title': 'Elli-Shop'
         }
         payload = {
-            'model': 'deepseek/deepseek-r1',
+            'model': 'deepseek/deepseek-chat',
             'messages': [
-                {'role': 'system', 'content': 'Ты — Элли, вежливый консультант. Отвечай коротко (1-2 предложения) и по делу. Никаких рассуждений, только факты.'},
-                {'role': 'user', 'content': prompt}
+                {'role': 'user', 'content': system_prompt}
             ],
-            'temperature': temperature,
-            'max_tokens': max_tokens
+            'temperature': 0.5,
+            'max_tokens': 250
         }
         r = requests.post(OPENROUTER_URL, headers=headers, json=payload, timeout=15)
         resp = r.json()
@@ -110,8 +128,6 @@ def ask(prompt, temperature=0.5, max_tokens=200):
             content = resp['choices'][0]['message'].get('content', '')
             if '```' in content:
                 content = content.split('```')[0].strip()
-            if 'Ответ:' in content:
-                content = content.split('Ответ:')[-1].strip()
             return content.strip() if content else None
         return None
     except Exception as e:
@@ -119,35 +135,51 @@ def ask(prompt, temperature=0.5, max_tokens=200):
         return None
 
 dialogue_history = []
-last_greeting = False
 
 def generate_response(user_text):
-    global dialogue_history, last_greeting
+    global dialogue_history
     user_lower = user_text.lower().strip()
     
     dialogue_history.append(f"Клиент: {user_text}")
     if len(dialogue_history) > 20:
         dialogue_history = dialogue_history[-20:]
     
-    # Синонимы: телефон = смартфон
-    search_text = user_lower.replace('телефон', 'смартфон')
+    # Синонимы для поиска
+    search_text = user_lower.replace('телефон', 'смартфон').replace('мобильн', 'смартфон')
     
-    # Приветствия — только если сообщение состоит ТОЛЬКО из приветствия
+    # Простые приветствия — без AI
     greetings = ['здравствуй', 'привет', 'добрый день', 'доброе утро', 'добрый вечер', 'здрасте', 'салют', 'ку', 'хай']
-    is_pure_greeting = any(user_lower.strip() == g for g in greetings) or user_lower.strip() in ['привет!', 'здравствуйте!', 'ку!']
+    is_pure_greeting = user_lower.strip() in greetings or user_lower.strip() in ['привет!', 'здравствуйте!', 'ку!', 'хай!']
     
-    if is_pure_greeting:
-        if not last_greeting:
-            last_greeting = True
-            return "Здравствуйте! Я Элли, консультант TechStore. Чем могу помочь? У нас есть телефоны, наушники, зарядки и аксессуары."
-        else:
-            return "Чем могу помочь? Спрашивайте про телефоны, наушники, зарядки — всё в наличии!"
+    if is_pure_greeting and len(dialogue_history) <= 2:
+        return "Здравствуйте! Я Элли, консультант TechStore. Чем могу помочь? У нас есть телефоны, наушники, зарядки и аксессуары."
     
-    # Сбрасываем флаг приветствия при ЛЮБОМ другом сообщении
-    last_greeting = False
+    # Простые вопросы о доставке/оплате — без AI
+    service_only = ['как заказать', 'как купить', 'доставк', 'оплат', 'возврат', 'гаранти', 'доставить', 'курьер', 'почт']
+    if any(w in user_lower for w in service_only) and len(user_lower) < 40:
+        return "🚚 Доставка по РФ — 3-7 дней (Почта, СДЭК). Оплата картой онлайн или наличными при получении. Возврат — 14 дней. Гарантия до 2 лет."
     
-    # Поиск с синонимами
+    # Ищем товары в базе
     found = search_products(search_text)
+    
+    # Если товаров 0 или вопрос сложный — подключаем AI
+    if not found or len(user_lower) > 30 or '?' in user_text or 'какой' in user_lower or 'посоветуй' in user_lower or 'что лучше' in user_lower:
+        # Собираем контекст из базы
+        if found:
+            products_context = "\n".join([format_product_text(p) for p in found[:15]])
+        else:
+            # Если ничего не найдено — даём AI все категории
+            all_products = get_all_products()
+            products_context = "\n".join([format_product_text(p) for p in all_products[:20]])
+        
+        history_text = "\n".join(dialogue_history[-6:])
+        ai_response = ask_ai(user_text, history_text, products_context)
+        
+        if ai_response:
+            dialogue_history.append(f"Элли: {ai_response}")
+            return ai_response
+    
+    # Если AI не сработал — отвечаем сами
     if found:
         items_text = "\n".join([format_product_text(p) for p in found[:5]])
         if len(found) == 1:
@@ -155,17 +187,8 @@ def generate_response(user_text):
         else:
             return f"Нашёл несколько вариантов:\n{items_text}\n\nКакой именно вас интересует?"
     
-    # Сервисные вопросы
-    service_words = ['доставк', 'оплат', 'возврат', 'гаранти', 'как купить', 'как заказать', 'доставить', 'курьер', 'почт', 'скидк', 'акци', 'оплата', 'деньги']
-    if any(w in user_lower for w in service_words):
-        return "🚚 Доставка по РФ — 3-7 дней (Почта, СДЭК). Оплата картой онлайн или наличными при получении. Возврат — 14 дней. Гарантия до 2 лет."
-    
-    # Чего нет в ассортименте
-    if 'ноутбук' in user_lower or 'планшет' in user_lower or 'компьютер' in user_lower:
-        return "Извините, ноутбуков у нас нет. В наличии только смартфоны, наушники и зарядки. Могу что-то подобрать из них?"
-    
-    # Финальный ответ
-    return "Я не совсем поняла запрос. У нас есть смартфоны, наушники (проводные и Bluetooth), зарядки (обычные и магнитные), а также чехлы. Напишите модель или категорию, и я покажу цены."
+    # Ничего не найдено и AI не ответил
+    return "Я не совсем поняла запрос. У нас есть смартфоны, наушники, зарядки и чехлы. Напишите модель или категорию, и я покажу цены."
     ADMIN_TEMPLATE = """
 <!DOCTYPE html>
 <html>
@@ -334,7 +357,6 @@ EDIT_TEMPLATE = """
 </body>
 </html>
 """
-
 @app.route('/admin', methods=['GET', 'POST'])
 def admin_login():
     if request.method == 'POST':
