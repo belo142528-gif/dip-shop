@@ -48,7 +48,7 @@ def ask(prompt, temperature=0.7, max_tokens=600):
             'Authorization': f'Bearer {OPENROUTER_KEY}',
             'Content-Type': 'application/json; charset=utf-8',
             'HTTP-Referer': 'https://dip-shop.onrender.com',
-            'X-Title': 'еlli-Shop'
+            'X-Title': 'Elli-Shop'
         }
         payload = {
             'model': 'deepseek/deepseek-r1',
@@ -84,7 +84,7 @@ def generate_response(user_text):
     
     if found_items:
         items_text = '\n'.join(found_items)
-        prompt = f"""Ты — вежливый консультант магазина «{SHOP_NAME}». 
+        prompt = f"""Ты — вежливый консультант магазина «{SHOP_NAME}», тебя зовут Элли. 
 
 Информация о товарах:
 {SHOP_INFO}
@@ -95,14 +95,32 @@ def generate_response(user_text):
 {items_text}
 
 Ответь клиенту (1-3 предложения):
-1. Представься и назови магазин.
+1. Представься (Элли) и назови магазин.
 2. Расскажи о товаре: цена, наличие, гарантия.
 3. Предложи помощь с другими товарами.
 Будь вежлива и полезна. Не используй markdown."""
         return ask(prompt)
     
-    # Если товар не найден
-    prompt = f"""Ты — вежливый консультант магазина «{SHOP_NAME}». 
+    # Если товар не найден — проверяем, не спрашивают ли про доставку/оплату
+    service_words = ['доставка', 'оплата', 'возврат', 'гарантия', 'как купить', 'как заказать', 'доставить']
+    is_service_question = any(w in user_lower for w in service_words)
+    
+    if is_service_question:
+        prompt = f"""Ты — вежливый консультант магазина «{SHOP_NAME}», тебя зовут Элли. 
+
+Информация о магазине:
+{SHOP_INFO}
+
+Клиент спросил: "{user_text}"
+
+Это вопрос о доставке, оплате или возврате. Ответь клиенту (2-3 предложения):
+1. Чётко ответь на вопрос о доставке/оплате/возврате, используя информацию магазина.
+2. Предложи помощь с выбором товаров.
+Будь вежлива и полезна. Не используй markdown."""
+        return ask(prompt)
+    
+    # Если вопрос не о товаре и не о сервисе
+    prompt = f"""Ты — вежливый консультант магазина «{SHOP_NAME}», тебя зовут Элли. 
 
 Информация о магазине:
 {SHOP_INFO}
@@ -110,10 +128,9 @@ def generate_response(user_text):
 Клиент спросил: "{user_text}"
 
 Ответь клиенту (1-3 предложения):
-1. Представься.
+1. Представься (Элли).
 2. Если вопрос о товаре, которого нет в каталоге — вежливо скажи об этом и предложи похожие товары.
-3. Если вопрос о доставке, оплате, возврате — ответь по информации магазина.
-4. Если вопрос не по теме магазина — вежливо скажи, что ты консультант по товарам.
+3. Если вопрос не по теме магазина — вежливо скажи, что ты консультант по товарам.
 Будь вежлива и полезна. Не используй markdown."""
     return ask(prompt)
     # ============================================================
@@ -122,7 +139,7 @@ def generate_response(user_text):
 
 app = Flask(__name__)
 
-HTML = '<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Элли-Консультант</title><style>body{margin:0;padding:0;background:#f5f5f5;color:#333;font-family:system-ui;height:100vh;display:flex;flex-direction:column}#header{background:#1a73e8;color:#fff;padding:15px;text-align:center;font-size:18px;font-weight:bold}#chat{flex:1;overflow-y:auto;padding:15px;background:#fff;margin:10px;border-radius:15px;box-shadow:0 2px 10px rgba(0,0,0,0.1)}.msg{margin:8px 0;padding:10px 15px;border-radius:15px;max-width:85%;word-wrap:break-word}.user{background:#1a73e8;color:#fff;margin-left:auto;text-align:right}.dip{background:#e8e8e8;color:#333;margin-right:auto}#form{display:flex;padding:10px;background:#fff;border-top:1px solid #ddd}#input{flex:1;padding:12px;border:1px solid #ddd;border-radius:25px;font-size:16px}#send{margin-left:8px;padding:12px 25px;border:none;border-radius:25px;background:#1a73e8;color:#fff;font-size:16px}</style></head><body><div id="header">🛍️ ' + SHOP_NAME + ' — Онлайн-консультант</div><div id="chat"><div class="msg dip">Здравствуйте! Я Дип, виртуальный консультант магазина «' + SHOP_NAME + '». Спросите меня о товарах, ценах, доставке!</div></div><form id="form" onsubmit="sendMsg(event)"><input id="input" type="text" placeholder="Напишите вопрос..." autofocus><button id="send" type="submit">→</button></form><script>function add(text,cls){var d=document.createElement("div");d.className="msg "+cls;d.textContent=text;document.getElementById("chat").appendChild(d);document.getElementById("chat").scrollTop=document.getElementById("chat").scrollHeight}async function sendMsg(e){e.preventDefault();var input=document.getElementById("input");var text=input.value.trim();if(!text)return;add(text,"user");input.value="";try{var r=await fetch("/chat",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({message:text})});var d=await r.json();add(d.reply,"dip")}catch(err){add("Ошибка связи...","dip")}}</script></body></html>'
+HTML = '<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Элли-Консультант</title><style>body{margin:0;padding:0;background:#f5f5f5;color:#333;font-family:system-ui;height:100vh;display:flex;flex-direction:column}#header{background:#e91e63;color:#fff;padding:15px;text-align:center;font-size:18px;font-weight:bold}#chat{flex:1;overflow-y:auto;padding:15px;background:#fff;margin:10px;border-radius:15px;box-shadow:0 2px 10px rgba(0,0,0,0.1)}.msg{margin:8px 0;padding:10px 15px;border-radius:15px;max-width:85%;word-wrap:break-word}.user{background:#e91e63;color:#fff;margin-left:auto;text-align:right}.elli{background:#fce4ec;color:#333;margin-right:auto}#form{display:flex;padding:10px;background:#fff;border-top:1px solid #ddd}#input{flex:1;padding:12px;border:1px solid #ddd;border-radius:25px;font-size:16px}#send{margin-left:8px;padding:12px 25px;border:none;border-radius:25px;background:#e91e63;color:#fff;font-size:16px}</style></head><body><div id="header">🛍️ ' + SHOP_NAME + ' — Онлайн-консультант Элли</div><div id="chat"><div class="msg elli">Здравствуйте! Я Элли, виртуальный консультант магазина «' + SHOP_NAME + '». Спросите меня о товарах, ценах, доставке!</div></div><form id="form" onsubmit="sendMsg(event)"><input id="input" type="text" placeholder="Напишите вопрос..." autofocus><button id="send" type="submit">→</button></form><script>function add(text,cls){var d=document.createElement("div");d.className="msg "+cls;d.textContent=text;document.getElementById("chat").appendChild(d);document.getElementById("chat").scrollTop=document.getElementById("chat").scrollHeight}async function sendMsg(e){e.preventDefault();var input=document.getElementById("input");var text=input.value.trim();if(!text)return;add(text,"user");input.value="";try{var r=await fetch("/chat",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({message:text})});var d=await r.json();add(d.reply,"elli")}catch(err){add("Ошибка связи...","elli")}}</script></body></html>'
 
 @app.route('/')
 def home():
