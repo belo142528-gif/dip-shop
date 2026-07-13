@@ -39,7 +39,7 @@ OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions'
 # ЗАПРОС К МОДЕЛИ
 # ============================================================
 
-def ask(prompt, temperature=0.7, max_tokens=400):
+def ask(prompt, temperature=0.7, max_tokens=600):
     if not OPENROUTER_KEY:
         return 'Извините, консультант временно недоступен.'
     
@@ -140,6 +140,6 @@ def chat():
 # ============================================================
 
 if __name__ == '__main__':
-    print(f"🛍️ Дип-консультант магазина «{SHOP_NAME}» запущена.")
+    print(f"🛍️ Элли-консультант магазина «{SHOP_NAME}» запущена.")
     port = int(os.environ.get('PORT', 5000))
     app.run(host='0.0.0.0', port=port)
