@@ -50,7 +50,6 @@ def search_products(query):
     rows = c.fetchall()
     conn.close()
     return rows
-
 def format_product_text(product):
     if len(product) >= 5:
         name = product[1]
@@ -83,7 +82,8 @@ if len(get_all_products()) == 0:
     ]
     for p in test_products:
         add_product(*p)
-        def ask_ai(user_message, dialogue_history, products_context):
+        
+def ask_ai(user_message, dialogue_history, products_context):
     if not OPENROUTER_KEY:
         return None
     try:
