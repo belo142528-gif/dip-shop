@@ -9,9 +9,8 @@ app = Flask(__name__)
 app.secret_key = os.urandom(24)
 
 SHOP_NAME = "TechStore"
-ADMIN_PASSWORD = "12345"  # Смени пароль!
+ADMIN_PASSWORD = "12345"
 
-# ========== РАБОТА С БАЗОЙ ДАННЫХ ==========
 def init_db():
     conn = sqlite3.connect('products.db')
     c = conn.cursor()
@@ -43,25 +42,14 @@ def get_all_products():
     return rows
 
 def search_products(query):
-    """Поиск товаров в своей БД (или в API магазина)"""
-    # ===== РАСКОММЕНТИРУЙ ЭТОТ БЛОК, КОГДА МАГАЗИН ДАСТ API =====
-    # try:
-    #     response = requests.get(f"https://api.magazin.ru/products?search={query}")
-    #     if response.status_code == 200:
-    #         return response.json()
-    # except:
-    #     pass  # Если API упал - используем свою БД
-    
-    # Поиск в своей БД (SQLite)
     conn = sqlite3.connect('products.db')
     c = conn.cursor()
-    c.execute("SELECT * FROM products WHERE name LIKE ? ORDER BY id DESC", (f'%{query}%',))
+    c.execute("SELECT * FROM products WHERE name LIKE ? OR category LIKE ? ORDER BY id DESC", (f'%{query}%', f'%{query}%'))
     rows = c.fetchall()
     conn.close()
     return rows
 
 def format_product_text(product):
-    """Форматирует товар из БД в красивую строку для чата"""
     if len(product) >= 5:
         name = product[1]
         price = product[2]
@@ -77,28 +65,29 @@ def format_product_text(product):
         return text
     return str(product)
 
-# ========== ИНИЦИАЛИЗАЦИЯ ==========
 init_db()
 
-# Добавляем тестовые товары (если база пустая)
 if len(get_all_products()) == 0:
     test_products = [
         ("TechStar A1", 8490, "да", "Смартфоны", "6.1\" AMOLED, 4/64GB"),
         ("TechStar A2", 12990, "да", "Смартфоны", "6.3\" AMOLED, 6/128GB"),
+        ("TechStar X1", 34990, "да", "Смартфоны", "6.7\" OLED, 12/256GB"),
         ("AirBuds Pro", 2690, "да", "Наушники", "TWS, Bluetooth 5.4, 8/32ч"),
+        ("AirBuds Lite", 1290, "да", "Наушники", "TWS, Bluetooth 5.3, 5/20ч"),
         ("MagCharge 15W", 1490, "да", "Зарядки", "Магнитная панель 15W"),
+        ("PowerCharge 20W", 790, "да", "Зарядки", "Проводная, USB-C, PD 3.0"),
         ("Чехол TechStar A1", 290, "да", "Аксессуары", "Силиконовый чехол"),
+        ("Чехол Universal", 190, "да", "Аксессуары", "Прозрачный TPU"),
     ]
     for p in test_products:
         add_product(*p)
 
-# ========== OPENROUTER AI ==========
 OPENROUTER_KEY = os.environ.get('OPENROUTER_KEY', '')
 OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions'
 
-def ask(prompt, temperature=0.5, max_tokens=400):
+def ask(prompt, temperature=0.5, max_tokens=200):
     if not OPENROUTER_KEY:
-        return 'Извините, консультант временно недоступен.'
+        return None
     try:
         headers = {
             'Authorization': f'Bearer {OPENROUTER_KEY}',
@@ -109,30 +98,28 @@ def ask(prompt, temperature=0.5, max_tokens=400):
         payload = {
             'model': 'deepseek/deepseek-r1',
             'messages': [
-                {'role': 'system', 'content': 'Ты — Элли, вежливый консультант магазина электроники. Отвечай коротко (1-2 предложения) и по делу. Не повторяй приветствие, если уже поздоровалась. Используй только информацию из контекста. НЕ пиши свои мысли, рассуждения или "мне кажется". Только факты.'},
+                {'role': 'system', 'content': 'Ты — Элли, вежливый консультант. Отвечай коротко (1-2 предложения) и по делу. Никаких рассуждений, только факты.'},
                 {'role': 'user', 'content': prompt}
             ],
             'temperature': temperature,
             'max_tokens': max_tokens
         }
-        r = requests.post(OPENROUTER_URL, headers=headers, json=payload, timeout=30)
+        r = requests.post(OPENROUTER_URL, headers=headers, json=payload, timeout=15)
         resp = r.json()
-        if 'choices' not in resp:
-            print(f"Ошибка API: {resp}")
-            return 'Извините, произошла ошибка.'
-        content = resp['choices'][0]['message'].get('content', '')
-        if '```' in content:
-            content = content.split('```')[0].strip()
-        if 'Ответ:' in content:
-            content = content.split('Ответ:')[-1].strip()
-        return content.strip() if content else 'Я задумалась...'
+        if 'choices' in resp:
+            content = resp['choices'][0]['message'].get('content', '')
+            if '```' in content:
+                content = content.split('```')[0].strip()
+            if 'Ответ:' in content:
+                content = content.split('Ответ:')[-1].strip()
+            return content.strip() if content else None
+        return None
     except Exception as e:
-        print(f"Ошибка: {e}")
-        return 'Извините, консультант временно недоступен.'
+        print(f"Ошибка AI: {e}")
+        return None
 
-# ========== ЛОГИКА ЧАТА ==========
 dialogue_history = []
-last_greeting = None
+last_greeting = False
 
 def generate_response(user_text):
     global dialogue_history, last_greeting
@@ -142,62 +129,31 @@ def generate_response(user_text):
     if len(dialogue_history) > 20:
         dialogue_history = dialogue_history[-20:]
     
-    # Приветствия
     greetings = ['здравствуй', 'привет', 'добрый день', 'доброе утро', 'добрый вечер', 'здрасте', 'салют', 'ку', 'хай']
     if any(g in user_lower for g in greetings):
-        if last_greeting:
-            return "Чем могу помочь? Спрашивайте про телефоны, наушники, зарядки — всё в наличии!"
-        else:
+        if not last_greeting:
             last_greeting = True
             return "Здравствуйте! Я Элли, консультант TechStore. Чем могу помочь? У нас есть телефоны, наушники, зарядки и аксессуары."
+        else:
+            return "Чем могу помочь? Спрашивайте про телефоны, наушники, зарядки — всё в наличии!"
     
-    # Поиск товаров
     found = search_products(user_lower)
     if found:
         items_text = "\n".join([format_product_text(p) for p in found[:5]])
         if len(found) == 1:
-            prompt = f"""Ты консультант магазина TechStore.
-Клиент спросил: "{user_text}"
-Найден товар:
-{items_text}
-Ответь кратко (1 предложение): подтверди, что товар есть, назови цену и наличие. Предложи помощь."""
+            return f"Нашёл! {items_text}. Что-то ещё?"
         else:
-            prompt = f"""Ты консультант магазина TechStore.
-Клиент спросил: "{user_text}"
-Найдено товаров: {len(found)}
-{items_text}
-Ответь кратко (1-2 предложения): перечисли найденные товары с ценами. Спроси, что именно интересует."""
-        reply = ask(prompt, temperature=0.3, max_tokens=150)
-        dialogue_history.append(f"Элли: {reply}")
-        return reply
+            return f"Нашёл несколько вариантов:\n{items_text}\n\nКакой именно вас интересует?"
     
-    # Сервисные вопросы
-    service_words = ['доставк', 'оплат', 'возврат', 'гаранти', 'как купить', 'как заказать', 'доставить', 'курьер', 'почт', 'скидк', 'акци']
+    service_words = ['доставк', 'оплат', 'возврат', 'гаранти', 'как купить', 'как заказать', 'доставить', 'курьер', 'почт', 'скидк', 'акци', 'оплата', 'деньги']
     if any(w in user_lower for w in service_words):
-        prompt = f"""Ты консультант TechStore.
-Клиент спросил: "{user_text}"
-Информация:
-- Доставка по РФ — 3-7 дней (Почта России, СДЭК)
-- Оплата картой онлайн или наличными при получении
-- Возврат — 14 дней
-- Гарантия на технику — от 3 мес до 2 лет
-- Акции и скидки — уточняйте у менеджера
-Ответь кратко (1-2 предложения) по делу."""
-        reply = ask(prompt, temperature=0.3, max_tokens=150)
-        dialogue_history.append(f"Элли: {reply}")
-        return reply
+        return "🚚 Доставка по РФ — 3-7 дней (Почта, СДЭК). Оплата картой онлайн или наличными при получении. Возврат — 14 дней. Гарантия до 2 лет."
     
-    # Непонятный запрос
-    prompt = f"""Ты консультант TechStore.
-Клиент спросил: "{user_text}"
-Если вопрос не о товарах — вежливо направь в нужное русло.
-Предложи: телефоны, наушники (проводные и Bluetooth), зарядки (обычные и магнитные), чехлы.
-Ответь в 1 предложение."""
-    reply = ask(prompt, temperature=0.5, max_tokens=100)
-    dialogue_history.append(f"Элли: {reply}")
-    return reply
-    # ========== АДМИНКА ==========
-ADMIN_TEMPLATE = """
+    if 'ноутбук' in user_lower or 'планшет' in user_lower or 'компьютер' in user_lower:
+        return "Извините, ноутбуков у нас нет. В наличии только смартфоны, наушники и зарядки. Могу что-то подобрать из них?"
+    
+    return "Я не совсем поняла запрос. У нас есть смартфоны, наушники (проводные и Bluetooth), зарядки (обычные и магнитные), а также чехлы. Напишите модель или категорию, и я покажу цены."
+    ADMIN_TEMPLATE = """
 <!DOCTYPE html>
 <html>
 <head>
@@ -270,7 +226,7 @@ ADMIN_TEMPLATE = """
             </div>
             <div class="form-group">
                 <label>Характеристики</label>
-                <input type="text" name="specs" placeholder="6.1\" AMOLED, 4/64GB, 50MP...">
+                <input type="text" name="specs" placeholder='6.1" AMOLED, 4/64GB, 50MP...'>
             </div>
             <button type="submit" class="btn btn-success">➕ Добавить</button>
         </form>
@@ -455,7 +411,6 @@ def admin_logout():
     session.pop('admin', None)
     return redirect('/admin')
 
-# ========== ОСНОВНЫЕ МАРШРУТЫ ==========
 HTML = '<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Элли-Консультант</title><style>body{margin:0;padding:0;background:#f0f4f8;color:#333;font-family:system-ui;height:100vh;display:flex;flex-direction:column}#header{background:#2563eb;color:#fff;padding:15px;text-align:center;font-size:18px;font-weight:bold}#chat{flex:1;overflow-y:auto;padding:15px;background:#fff;margin:10px;border-radius:15px;box-shadow:0 2px 10px rgba(0,0,0,0.08)}.msg{margin:8px 0;padding:10px 15px;border-radius:15px;max-width:85%;word-wrap:break-word}.user{background:#2563eb;color:#fff;margin-left:auto;text-align:right}.elli{background:#e8f0fe;color:#333;margin-right:auto}#form{display:flex;padding:10px;background:#fff;border-top:1px solid #e5e7eb}#input{flex:1;padding:12px;border:1px solid #d1d5db;border-radius:25px;font-size:16px}#send{margin-left:8px;padding:12px 25px;border:none;border-radius:25px;background:#2563eb;color:#fff;font-size:16px}</style></head><body><div id="header">🛍️ ' + SHOP_NAME + ' — Онлайн-консультант Элли <a href="/admin" style="color:white;font-size:14px;margin-left:20px;">⚙️ Админка</a></div><div id="chat"><div class="msg elli">Здравствуйте! Я Элли, виртуальный консультант магазина «' + SHOP_NAME + '». Спросите меня о товарах, ценах, доставке!</div></div><form id="form" onsubmit="sendMsg(event)"><input id="input" type="text" placeholder="Напишите вопрос..." autofocus><button id="send" type="submit">→</button></form><script>function add(text,cls){var d=document.createElement("div");d.className="msg "+cls;d.textContent=text;document.getElementById("chat").appendChild(d);document.getElementById("chat").scrollTop=document.getElementById("chat").scrollHeight}async function sendMsg(e){e.preventDefault();var input=document.getElementById("input");var text=input.value.trim();if(!text)return;add(text,"user");input.value="";try{var r=await fetch("/chat",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({message:text})});var d=await r.json();add(d.reply,"elli")}catch(err){add("Ошибка связи...","elli")}}</script></body></html>'
 
 @app.route('/')
