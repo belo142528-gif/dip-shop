@@ -1,59 +1,98 @@
 import os
 import json
+import sqlite3
 import requests
-from datetime import datetime, timezone
-from flask import Flask, request, jsonify, Response
+from datetime import datetime
+from flask import Flask, request, jsonify, render_template_string, redirect, url_for, session
+
+app = Flask(__name__)
+app.secret_key = os.urandom(24)
 
 SHOP_NAME = "TechStore"
+ADMIN_PASSWORD = "12345"  # Смени пароль!
 
-PHONES = {
-    "techstar a1": {"model": "TechStar A1", "screen": "6.1\" AMOLED 90Hz", "cpu": "MediaTek Helio G85", "ram": "4GB", "storage": "64GB", "camera": "50MP+2MP", "battery": "4500mAh", "price": 8490, "stock": "да"},
-    "techstar a2": {"model": "TechStar A2", "screen": "6.3\" AMOLED 120Hz", "cpu": "Snapdragon 680", "ram": "6GB", "storage": "128GB", "camera": "64MP+8MP+2MP", "battery": "5000mAh", "price": 12990, "stock": "да"},
-    "techstar a3 pro": {"model": "TechStar A3 Pro", "screen": "6.5\" AMOLED 120Hz", "cpu": "Snapdragon 778G", "ram": "8GB", "storage": "256GB", "camera": "108MP+12MP+5MP", "battery": "5200mAh", "price": 19490, "stock": "да"},
-    "techstar x1": {"model": "TechStar X1", "screen": "6.7\" OLED 120Hz", "cpu": "Snapdragon 8 Gen 2", "ram": "12GB", "storage": "256GB", "camera": "200MP+50MP+12MP", "battery": "5500mAh", "price": 34990, "stock": "да"},
-    "techstar x2 ultra": {"model": "TechStar X2 Ultra", "screen": "6.9\" OLED 144Hz", "cpu": "Snapdragon 8 Gen 3", "ram": "16GB", "storage": "512GB", "camera": "200MP+64MP+48MP", "battery": "6000mAh", "price": 49990, "stock": "да"},
-    "starlite s1": {"model": "StarLite S1", "screen": "5.8\" IPS 60Hz", "cpu": "Unisoc T606", "ram": "3GB", "storage": "32GB", "camera": "13MP+2MP", "battery": "4000mAh", "price": 4990, "stock": "да"},
-    "starlite s2": {"model": "StarLite S2", "screen": "6.0\" IPS 90Hz", "cpu": "Unisoc T616", "ram": "4GB", "storage": "64GB", "camera": "16MP+5MP", "battery": "4500mAh", "price": 6490, "stock": "да"},
-    "maxpower m1": {"model": "MaxPower M1", "screen": "6.6\" IPS 60Hz", "cpu": "Snapdragon 480", "ram": "4GB", "storage": "64GB", "camera": "25MP+8MP", "battery": "6000mAh", "price": 7490, "stock": "да"},
-    "maxpower m2": {"model": "MaxPower M2", "screen": "6.7\" IPS 90Hz", "cpu": "Snapdragon 695", "ram": "6GB", "storage": "128GB", "camera": "48MP+12MP", "battery": "7000mAh", "price": 11490, "stock": "да"},
-    "primevision p1": {"model": "PrimeVision P1", "screen": "6.2\" OLED 120Hz", "cpu": "Tensor G2", "ram": "6GB", "storage": "128GB", "camera": "50MP+12MP", "battery": "4300mAh", "price": 14990, "stock": "да"},
-}
+# ========== РАБОТА С БАЗОЙ ДАННЫХ ==========
+def init_db():
+    conn = sqlite3.connect('products.db')
+    c = conn.cursor()
+    c.execute('''CREATE TABLE IF NOT EXISTS products
+                 (id INTEGER PRIMARY KEY AUTOINCREMENT,
+                  name TEXT NOT NULL,
+                  price INTEGER NOT NULL,
+                  stock TEXT NOT NULL,
+                  category TEXT,
+                  specs TEXT,
+                  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)''')
+    conn.commit()
+    conn.close()
 
-ACCESSORIES = {
-    "чехол techstar a1": {"name": "Чехол TechStar A1", "type": "Силикон", "price": 290, "stock": "да"},
-    "чехол techstar a2": {"name": "Чехол TechStar A2", "type": "Силикон", "price": 310, "stock": "да"},
-    "чехол starlite s1": {"name": "Чехол StarLite S1", "type": "Силикон", "price": 200, "stock": "да"},
-    "чехол maxpower m1": {"name": "Чехол MaxPower M1", "type": "Силикон", "price": 260, "stock": "да"},
-    "универсальный чехол": {"name": "Universal Clear Case", "type": "Прозрачный TPU", "price": 190, "stock": "да"},
-    "soundbud basic": {"name": "SoundBud Basic", "type": "Проводные 3.5mm", "feature": "Без микрофона", "price": 390, "stock": "да"},
-    "soundbud mic": {"name": "SoundBud Mic", "type": "Проводные 3.5mm", "feature": "С микрофоном", "price": 490, "stock": "да"},
-    "soundbud pro": {"name": "SoundBud Pro", "type": "Проводные 3.5mm", "feature": "Усиленный бас", "price": 690, "stock": "да"},
-    "earfit classic": {"name": "EarFit Classic", "type": "Проводные затычки", "feature": "Пассивное шумоподавление", "price": 590, "stock": "да"},
-    "bassline x1": {"name": "BassLine X1", "type": "Проводные затычки", "feature": "Усиленный бас", "price": 890, "stock": "да"},
-    "airbuds mini": {"name": "AirBuds Mini", "type": "TWS", "bt": "5.2", "battery": "4/16ч", "price": 890, "stock": "да"},
-    "airbuds lite": {"name": "AirBuds Lite", "type": "TWS", "bt": "5.3", "battery": "5/20ч", "price": 1290, "stock": "да"},
-    "airbuds pro": {"name": "AirBuds Pro", "type": "TWS", "bt": "5.4", "battery": "8/32ч", "price": 2690, "stock": "да"},
-    "airbuds anc": {"name": "AirBuds ANC", "type": "TWS", "bt": "5.4", "battery": "6/24ч с ANC", "price": 3990, "stock": "да"},
-    "neckband s1": {"name": "NeckBand S1", "type": "Вокруг шеи", "bt": "5.2", "battery": "10/40ч", "price": 1190, "stock": "да"},
-    "overear studio": {"name": "OverEar Studio", "type": "Накладные", "bt": "5.3", "battery": "20/80ч", "price": 4990, "stock": "да"},
-    "overear anc pro": {"name": "OverEar ANC Pro", "type": "Накладные", "bt": "5.4", "battery": "22/88ч с ANC", "price": 10990, "stock": "да"},
-    "зарядка 5w": {"name": "PowerCharge 5W", "type": "Проводная", "power": "5W", "ports": "1×USB-A", "price": 290, "stock": "да"},
-    "зарядка 18w": {"name": "PowerCharge 18W", "type": "Проводная", "power": "18W QC 3.0", "ports": "1×USB-A", "price": 590, "stock": "да"},
-    "зарядка 20w": {"name": "PowerCharge 20W", "type": "Проводная", "power": "20W PD 3.0", "ports": "1×USB-C", "price": 790, "stock": "да"},
-    "зарядка 33w": {"name": "PowerCharge 33W", "type": "Проводная", "power": "33W PD+QC", "ports": "USB-A + USB-C", "price": 1290, "stock": "да"},
-    "зарядка 65w": {"name": "PowerCharge 65W GaN", "type": "Проводная", "power": "65W PD", "ports": "1×USB-C", "price": 2990, "stock": "да"},
-    "зарядка 100w trio": {"name": "PowerCharge 100W Trio", "type": "Проводная", "power": "100W GaN", "ports": "2×USB-C + 1×USB-A", "price": 5990, "stock": "да"},
-    "magcharge 15w": {"name": "MagCharge 15W", "type": "Магнитная панель", "power": "15W", "feature": "MagSafe совместимость", "price": 1490, "stock": "да"},
-    "magcharge stand 15w": {"name": "MagCharge Stand 15W", "type": "Магнитная подставка", "power": "15W", "feature": "Регулируемый угол", "price": 2490, "stock": "да"},
-    "magpower bank 10000": {"name": "MagPower Bank 10000", "type": "Магнитный пауэрбанк", "power": "15W", "feature": "10000 мАч", "price": 4490, "stock": "да"},
-    "magdesk trio": {"name": "MagDesk Trio", "type": "Магнитная станция", "power": "15W+5W+3W", "feature": "Телефон+часы+наушники", "price": 5990, "stock": "да"},
-    "magflex cable": {"name": "MagFlex Cable", "type": "Магнитный кабель", "power": "5W", "feature": "Type-C/Lightning", "price": 790, "stock": "да"},
-}
+def add_product(name, price, stock, category="", specs=""):
+    conn = sqlite3.connect('products.db')
+    c = conn.cursor()
+    c.execute("INSERT INTO products (name, price, stock, category, specs) VALUES (?, ?, ?, ?, ?)",
+              (name, price, stock, category, specs))
+    conn.commit()
+    conn.close()
 
-SHOP_ITEMS = {}
-SHOP_ITEMS.update(PHONES)
-SHOP_ITEMS.update(ACCESSORIES)
+def get_all_products():
+    conn = sqlite3.connect('products.db')
+    c = conn.cursor()
+    c.execute("SELECT * FROM products ORDER BY id DESC")
+    rows = c.fetchall()
+    conn.close()
+    return rows
 
+def search_products(query):
+    """Поиск товаров в своей БД (или в API магазина)"""
+    # ===== РАСКОММЕНТИРУЙ ЭТОТ БЛОК, КОГДА МАГАЗИН ДАСТ API =====
+    # try:
+    #     response = requests.get(f"https://api.magazin.ru/products?search={query}")
+    #     if response.status_code == 200:
+    #         return response.json()
+    # except:
+    #     pass  # Если API упал - используем свою БД
+    
+    # Поиск в своей БД (SQLite)
+    conn = sqlite3.connect('products.db')
+    c = conn.cursor()
+    c.execute("SELECT * FROM products WHERE name LIKE ? ORDER BY id DESC", (f'%{query}%',))
+    rows = c.fetchall()
+    conn.close()
+    return rows
+
+def format_product_text(product):
+    """Форматирует товар из БД в красивую строку для чата"""
+    if len(product) >= 5:
+        name = product[1]
+        price = product[2]
+        stock = product[3]
+        category = product[4] or ""
+        specs = product[5] or ""
+        text = f"📦 {name}"
+        if category:
+            text += f" ({category})"
+        if specs:
+            text += f" - {specs}"
+        text += f" — {price} ₽, в наличии: {stock}"
+        return text
+    return str(product)
+
+# ========== ИНИЦИАЛИЗАЦИЯ ==========
+init_db()
+
+# Добавляем тестовые товары (если база пустая)
+if len(get_all_products()) == 0:
+    test_products = [
+        ("TechStar A1", 8490, "да", "Смартфоны", "6.1\" AMOLED, 4/64GB"),
+        ("TechStar A2", 12990, "да", "Смартфоны", "6.3\" AMOLED, 6/128GB"),
+        ("AirBuds Pro", 2690, "да", "Наушники", "TWS, Bluetooth 5.4, 8/32ч"),
+        ("MagCharge 15W", 1490, "да", "Зарядки", "Магнитная панель 15W"),
+        ("Чехол TechStar A1", 290, "да", "Аксессуары", "Силиконовый чехол"),
+    ]
+    for p in test_products:
+        add_product(*p)
+
+# ========== OPENROUTER AI ==========
 OPENROUTER_KEY = os.environ.get('OPENROUTER_KEY', '')
 OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions'
 
@@ -91,40 +130,7 @@ def ask(prompt, temperature=0.5, max_tokens=400):
         print(f"Ошибка: {e}")
         return 'Извините, консультант временно недоступен.'
 
-def search_products(query):
-    query_words = query.lower().split()
-    results = []
-    for key, info in SHOP_ITEMS.items():
-        score = 0
-        key_lower = key.lower()
-        for word in query_words:
-            if word in key_lower:
-                score += 2
-            if word in str(info).lower():
-                score += 1
-        if query.lower() in key_lower:
-            score += 5
-        if score > 0:
-            results.append((score, key, info))
-    results.sort(reverse=True, key=lambda x: x[0])
-    return results[:5]
-
-def format_product_text(key, info):
-    if 'screen' in info:
-        return f"📱 {info['model']}: {info['screen']}, {info['cpu']}, {info['ram']}/{info['storage']}, камера {info['camera']}, АКБ {info['battery']} — {info['price']} ₽"
-    elif 'type' in info:
-        text = f"🎧 {info['name']} ({info['type']})"
-        if 'bt' in info:
-            text += f", Bluetooth {info['bt']}"
-        if 'power' in info:
-            text += f", {info['power']}"
-        if 'feature' in info:
-            text += f", {info['feature']}"
-        text += f" — {info['price']} ₽"
-        return text
-    else:
-        return f"{key}: {info.get('price', 'цена не указана')} ₽"
-
+# ========== ЛОГИКА ЧАТА ==========
 dialogue_history = []
 last_greeting = None
 
@@ -136,6 +142,7 @@ def generate_response(user_text):
     if len(dialogue_history) > 20:
         dialogue_history = dialogue_history[-20:]
     
+    # Приветствия
     greetings = ['здравствуй', 'привет', 'добрый день', 'доброе утро', 'добрый вечер', 'здрасте', 'салют', 'ку', 'хай']
     if any(g in user_lower for g in greetings):
         if last_greeting:
@@ -144,9 +151,10 @@ def generate_response(user_text):
             last_greeting = True
             return "Здравствуйте! Я Элли, консультант TechStore. Чем могу помочь? У нас есть телефоны, наушники, зарядки и аксессуары."
     
+    # Поиск товаров
     found = search_products(user_lower)
     if found:
-        items_text = "\n".join([format_product_text(key, info) for _, key, info in found])
+        items_text = "\n".join([format_product_text(p) for p in found[:5]])
         if len(found) == 1:
             prompt = f"""Ты консультант магазина TechStore.
 Клиент спросил: "{user_text}"
@@ -163,6 +171,7 @@ def generate_response(user_text):
         dialogue_history.append(f"Элли: {reply}")
         return reply
     
+    # Сервисные вопросы
     service_words = ['доставк', 'оплат', 'возврат', 'гаранти', 'как купить', 'как заказать', 'доставить', 'курьер', 'почт', 'скидк', 'акци']
     if any(w in user_lower for w in service_words):
         prompt = f"""Ты консультант TechStore.
@@ -178,6 +187,7 @@ def generate_response(user_text):
         dialogue_history.append(f"Элли: {reply}")
         return reply
     
+    # Непонятный запрос
     prompt = f"""Ты консультант TechStore.
 Клиент спросил: "{user_text}"
 Если вопрос не о товарах — вежливо направь в нужное русло.
@@ -186,10 +196,267 @@ def generate_response(user_text):
     reply = ask(prompt, temperature=0.5, max_tokens=100)
     dialogue_history.append(f"Элли: {reply}")
     return reply
+    # ========== АДМИНКА ==========
+ADMIN_TEMPLATE = """
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Админка TechStore</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: system-ui; background: #f0f4f8; padding: 20px; }
+        .container { max-width: 1200px; margin: 0 auto; background: white; border-radius: 15px; padding: 25px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+        h1 { margin-bottom: 20px; color: #2563eb; }
+        .btn { display: inline-block; padding: 8px 16px; background: #2563eb; color: white; border: none; border-radius: 8px; cursor: pointer; text-decoration: none; font-size: 14px; }
+        .btn-danger { background: #dc2626; }
+        .btn-success { background: #16a34a; }
+        .btn-warning { background: #f59e0b; }
+        table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+        th, td { padding: 10px; text-align: left; border-bottom: 1px solid #e5e7eb; }
+        th { background: #f8fafc; font-weight: 600; }
+        .actions a { margin-right: 8px; }
+        .form-group { margin-bottom: 15px; }
+        .form-group label { display: block; font-weight: 600; margin-bottom: 5px; }
+        .form-group input, .form-group textarea, .form-group select { width: 100%; padding: 8px; border: 1px solid #d1d5db; border-radius: 8px; }
+        .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; }
+        .logout { float: right; }
+        .flash { padding: 10px; border-radius: 8px; margin-bottom: 15px; }
+        .flash-success { background: #dcfce7; color: #166534; }
+        .flash-error { background: #fee2e2; color: #991b1b; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🛍️ Админка TechStore</h1>
+        <a href="/" class="btn" target="_blank">Чат с Элли</a>
+        <a href="/admin/logout" class="btn btn-danger logout">Выйти</a>
+        <hr style="margin: 15px 0;">
+        
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                {% for category, message in messages %}
+                    <div class="flash flash-{{ category }}">{{ message }}</div>
+                {% endfor %}
+            {% endif %}
+        {% endwith %}
+        
+        <h2>Добавить товар</h2>
+        <form method="POST" action="/admin/add">
+            <div class="form-row">
+                <div class="form-group">
+                    <label>Название</label>
+                    <input type="text" name="name" required>
+                </div>
+                <div class="form-group">
+                    <label>Цена (₽)</label>
+                    <input type="number" name="price" required>
+                </div>
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label>Наличие</label>
+                    <select name="stock">
+                        <option value="да">В наличии</option>
+                        <option value="нет">Нет</option>
+                        <option value="под заказ">Под заказ</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Категория</label>
+                    <input type="text" name="category" placeholder="Смартфоны, Наушники, Зарядки...">
+                </div>
+            </div>
+            <div class="form-group">
+                <label>Характеристики</label>
+                <input type="text" name="specs" placeholder="6.1\" AMOLED, 4/64GB, 50MP...">
+            </div>
+            <button type="submit" class="btn btn-success">➕ Добавить</button>
+        </form>
+        
+        <h2 style="margin-top: 30px;">Все товары</h2>
+        <table>
+            <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>Название</th>
+                    <th>Цена</th>
+                    <th>Наличие</th>
+                    <th>Категория</th>
+                    <th>Характеристики</th>
+                    <th>Действия</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for p in products %}
+                <tr>
+                    <td>{{ p[0] }}</td>
+                    <td>{{ p[1] }}</td>
+                    <td>{{ p[2] }} ₽</td>
+                    <td>{{ p[3] }}</td>
+                    <td>{{ p[4] or '-' }}</td>
+                    <td>{{ p[5] or '-' }}</td>
+                    <td class="actions">
+                        <a href="/admin/edit/{{ p[0] }}" class="btn btn-warning">✏️</a>
+                        <a href="/admin/delete/{{ p[0] }}" class="btn btn-danger" onclick="return confirm('Удалить?')">🗑️</a>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</body>
+</html>
+"""
 
-app = Flask(__name__)
+EDIT_TEMPLATE = """
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Редактировать товар</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: system-ui; background: #f0f4f8; padding: 20px; }
+        .container { max-width: 600px; margin: 0 auto; background: white; border-radius: 15px; padding: 25px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+        h1 { margin-bottom: 20px; color: #2563eb; }
+        .btn { display: inline-block; padding: 8px 16px; background: #2563eb; color: white; border: none; border-radius: 8px; cursor: pointer; text-decoration: none; font-size: 14px; }
+        .btn-success { background: #16a34a; }
+        .btn-secondary { background: #6b7280; }
+        .form-group { margin-bottom: 15px; }
+        .form-group label { display: block; font-weight: 600; margin-bottom: 5px; }
+        .form-group input, .form-group textarea, .form-group select { width: 100%; padding: 8px; border: 1px solid #d1d5db; border-radius: 8px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>✏️ Редактировать товар</h1>
+        <form method="POST">
+            <div class="form-group">
+                <label>Название</label>
+                <input type="text" name="name" value="{{ product[1] }}" required>
+            </div>
+            <div class="form-group">
+                <label>Цена (₽)</label>
+                <input type="number" name="price" value="{{ product[2] }}" required>
+            </div>
+            <div class="form-group">
+                <label>Наличие</label>
+                <select name="stock">
+                    <option value="да" {% if product[3] == 'да' %}selected{% endif %}>В наличии</option>
+                    <option value="нет" {% if product[3] == 'нет' %}selected{% endif %}>Нет</option>
+                    <option value="под заказ" {% if product[3] == 'под заказ' %}selected{% endif %}>Под заказ</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label>Категория</label>
+                <input type="text" name="category" value="{{ product[4] or '' }}">
+            </div>
+            <div class="form-group">
+                <label>Характеристики</label>
+                <input type="text" name="specs" value="{{ product[5] or '' }}">
+            </div>
+            <button type="submit" class="btn btn-success">💾 Сохранить</button>
+            <a href="/admin" class="btn btn-secondary">Отмена</a>
+        </form>
+    </div>
+</body>
+</html>
+"""
 
-HTML = '<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Элли-Консультант</title><style>body{margin:0;padding:0;background:#f0f4f8;color:#333;font-family:system-ui;height:100vh;display:flex;flex-direction:column}#header{background:#2563eb;color:#fff;padding:15px;text-align:center;font-size:18px;font-weight:bold}#chat{flex:1;overflow-y:auto;padding:15px;background:#fff;margin:10px;border-radius:15px;box-shadow:0 2px 10px rgba(0,0,0,0.08)}.msg{margin:8px 0;padding:10px 15px;border-radius:15px;max-width:85%;word-wrap:break-word}.user{background:#2563eb;color:#fff;margin-left:auto;text-align:right}.elli{background:#e8f0fe;color:#333;margin-right:auto}#form{display:flex;padding:10px;background:#fff;border-top:1px solid #e5e7eb}#input{flex:1;padding:12px;border:1px solid #d1d5db;border-radius:25px;font-size:16px}#send{margin-left:8px;padding:12px 25px;border:none;border-radius:25px;background:#2563eb;color:#fff;font-size:16px}</style></head><body><div id="header">🛍️ ' + SHOP_NAME + ' — Онлайн-консультант Элли</div><div id="chat"><div class="msg elli">Здравствуйте! Я Элли, виртуальный консультант магазина «' + SHOP_NAME + '». Спросите меня о товарах, ценах, доставке!</div></div><form id="form" onsubmit="sendMsg(event)"><input id="input" type="text" placeholder="Напишите вопрос..." autofocus><button id="send" type="submit">→</button></form><script>function add(text,cls){var d=document.createElement("div");d.className="msg "+cls;d.textContent=text;document.getElementById("chat").appendChild(d);document.getElementById("chat").scrollTop=document.getElementById("chat").scrollHeight}async function sendMsg(e){e.preventDefault();var input=document.getElementById("input");var text=input.value.trim();if(!text)return;add(text,"user");input.value="";try{var r=await fetch("/chat",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({message:text})});var d=await r.json();add(d.reply,"elli")}catch(err){add("Ошибка связи...","elli")}}</script></body></html>'
+@app.route('/admin', methods=['GET', 'POST'])
+def admin_login():
+    if request.method == 'POST':
+        if request.form.get('password') == ADMIN_PASSWORD:
+            session['admin'] = True
+            return redirect('/admin/dashboard')
+        return 'Неверный пароль!', 403
+    if session.get('admin'):
+        return redirect('/admin/dashboard')
+    return '''
+    <!DOCTYPE html>
+    <html>
+    <head><meta charset="utf-8"><title>Вход в админку</title>
+    <style>
+        body { font-family: system-ui; background: #f0f4f8; display: flex; justify-content: center; align-items: center; height: 100vh; }
+        .login { background: white; padding: 40px; border-radius: 15px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); width: 300px; }
+        input { width: 100%; padding: 10px; margin: 10px 0; border: 1px solid #d1d5db; border-radius: 8px; }
+        button { width: 100%; padding: 10px; background: #2563eb; color: white; border: none; border-radius: 8px; cursor: pointer; }
+    </style>
+    </head>
+    <body>
+    <div class="login">
+        <h2>🔐 Вход в админку</h2>
+        <form method="POST">
+            <input type="password" name="password" placeholder="Пароль" required>
+            <button type="submit">Войти</button>
+        </form>
+    </div>
+    </body>
+    </html>
+    '''
+
+@app.route('/admin/dashboard')
+def admin_dashboard():
+    if not session.get('admin'):
+        return redirect('/admin')
+    products = get_all_products()
+    return render_template_string(ADMIN_TEMPLATE, products=products)
+
+@app.route('/admin/add', methods=['POST'])
+def admin_add():
+    if not session.get('admin'):
+        return redirect('/admin')
+    name = request.form.get('name')
+    price = int(request.form.get('price', 0))
+    stock = request.form.get('stock', 'да')
+    category = request.form.get('category', '')
+    specs = request.form.get('specs', '')
+    add_product(name, price, stock, category, specs)
+    return redirect('/admin/dashboard')
+
+@app.route('/admin/delete/<int:product_id>')
+def admin_delete(product_id):
+    if not session.get('admin'):
+        return redirect('/admin')
+    conn = sqlite3.connect('products.db')
+    c = conn.cursor()
+    c.execute("DELETE FROM products WHERE id = ?", (product_id,))
+    conn.commit()
+    conn.close()
+    return redirect('/admin/dashboard')
+
+@app.route('/admin/edit/<int:product_id>', methods=['GET', 'POST'])
+def admin_edit(product_id):
+    if not session.get('admin'):
+        return redirect('/admin')
+    conn = sqlite3.connect('products.db')
+    c = conn.cursor()
+    if request.method == 'POST':
+        name = request.form.get('name')
+        price = int(request.form.get('price', 0))
+        stock = request.form.get('stock', 'да')
+        category = request.form.get('category', '')
+        specs = request.form.get('specs', '')
+        c.execute("UPDATE products SET name=?, price=?, stock=?, category=?, specs=? WHERE id=?", 
+                  (name, price, stock, category, specs, product_id))
+        conn.commit()
+        conn.close()
+        return redirect('/admin/dashboard')
+    c.execute("SELECT * FROM products WHERE id = ?", (product_id,))
+    product = c.fetchone()
+    conn.close()
+    return render_template_string(EDIT_TEMPLATE, product=product)
+
+@app.route('/admin/logout')
+def admin_logout():
+    session.pop('admin', None)
+    return redirect('/admin')
+
+# ========== ОСНОВНЫЕ МАРШРУТЫ ==========
+HTML = '<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Элли-Консультант</title><style>body{margin:0;padding:0;background:#f0f4f8;color:#333;font-family:system-ui;height:100vh;display:flex;flex-direction:column}#header{background:#2563eb;color:#fff;padding:15px;text-align:center;font-size:18px;font-weight:bold}#chat{flex:1;overflow-y:auto;padding:15px;background:#fff;margin:10px;border-radius:15px;box-shadow:0 2px 10px rgba(0,0,0,0.08)}.msg{margin:8px 0;padding:10px 15px;border-radius:15px;max-width:85%;word-wrap:break-word}.user{background:#2563eb;color:#fff;margin-left:auto;text-align:right}.elli{background:#e8f0fe;color:#333;margin-right:auto}#form{display:flex;padding:10px;background:#fff;border-top:1px solid #e5e7eb}#input{flex:1;padding:12px;border:1px solid #d1d5db;border-radius:25px;font-size:16px}#send{margin-left:8px;padding:12px 25px;border:none;border-radius:25px;background:#2563eb;color:#fff;font-size:16px}</style></head><body><div id="header">🛍️ ' + SHOP_NAME + ' — Онлайн-консультант Элли <a href="/admin" style="color:white;font-size:14px;margin-left:20px;">⚙️ Админка</a></div><div id="chat"><div class="msg elli">Здравствуйте! Я Элли, виртуальный консультант магазина «' + SHOP_NAME + '». Спросите меня о товарах, ценах, доставке!</div></div><form id="form" onsubmit="sendMsg(event)"><input id="input" type="text" placeholder="Напишите вопрос..." autofocus><button id="send" type="submit">→</button></form><script>function add(text,cls){var d=document.createElement("div");d.className="msg "+cls;d.textContent=text;document.getElementById("chat").appendChild(d);document.getElementById("chat").scrollTop=document.getElementById("chat").scrollHeight}async function sendMsg(e){e.preventDefault();var input=document.getElementById("input");var text=input.value.trim();if(!text)return;add(text,"user");input.value="";try{var r=await fetch("/chat",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({message:text})});var d=await r.json();add(d.reply,"elli")}catch(err){add("Ошибка связи...","elli")}}</script></body></html>'
 
 @app.route('/')
 def home():
@@ -204,5 +471,6 @@ def chat():
 
 if __name__ == '__main__':
     print(f"🛍️ Элли-консультант магазина «{SHOP_NAME}» запущена.")
+    print(f"🔐 Админка: http://127.0.0.1:5000/admin (пароль: {ADMIN_PASSWORD})")
     port = int(os.environ.get('PORT', 5000))
     app.run(host='0.0.0.0', port=port)
