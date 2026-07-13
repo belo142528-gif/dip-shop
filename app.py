@@ -129,15 +129,25 @@ def generate_response(user_text):
     if len(dialogue_history) > 20:
         dialogue_history = dialogue_history[-20:]
     
+    # Синонимы: телефон = смартфон
+    search_text = user_lower.replace('телефон', 'смартфон')
+    
+    # Приветствия — только если сообщение состоит ТОЛЬКО из приветствия
     greetings = ['здравствуй', 'привет', 'добрый день', 'доброе утро', 'добрый вечер', 'здрасте', 'салют', 'ку', 'хай']
-    if any(g in user_lower for g in greetings):
+    is_pure_greeting = any(user_lower.strip() == g for g in greetings) or user_lower.strip() in ['привет!', 'здравствуйте!', 'ку!']
+    
+    if is_pure_greeting:
         if not last_greeting:
             last_greeting = True
             return "Здравствуйте! Я Элли, консультант TechStore. Чем могу помочь? У нас есть телефоны, наушники, зарядки и аксессуары."
         else:
             return "Чем могу помочь? Спрашивайте про телефоны, наушники, зарядки — всё в наличии!"
     
-    found = search_products(user_lower)
+    # Сбрасываем флаг приветствия при ЛЮБОМ другом сообщении
+    last_greeting = False
+    
+    # Поиск с синонимами
+    found = search_products(search_text)
     if found:
         items_text = "\n".join([format_product_text(p) for p in found[:5]])
         if len(found) == 1:
@@ -145,13 +155,16 @@ def generate_response(user_text):
         else:
             return f"Нашёл несколько вариантов:\n{items_text}\n\nКакой именно вас интересует?"
     
+    # Сервисные вопросы
     service_words = ['доставк', 'оплат', 'возврат', 'гаранти', 'как купить', 'как заказать', 'доставить', 'курьер', 'почт', 'скидк', 'акци', 'оплата', 'деньги']
     if any(w in user_lower for w in service_words):
         return "🚚 Доставка по РФ — 3-7 дней (Почта, СДЭК). Оплата картой онлайн или наличными при получении. Возврат — 14 дней. Гарантия до 2 лет."
     
+    # Чего нет в ассортименте
     if 'ноутбук' in user_lower or 'планшет' in user_lower or 'компьютер' in user_lower:
         return "Извините, ноутбуков у нас нет. В наличии только смартфоны, наушники и зарядки. Могу что-то подобрать из них?"
     
+    # Финальный ответ
     return "Я не совсем поняла запрос. У нас есть смартфоны, наушники (проводные и Bluetooth), зарядки (обычные и магнитные), а также чехлы. Напишите модель или категорию, и я покажу цены."
     ADMIN_TEMPLATE = """
 <!DOCTYPE html>
