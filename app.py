@@ -523,6 +523,16 @@ def admin_logout():
     session.pop('admin', None)
     return redirect('/admin')
 
+@app.route('/reset-db')
+def reset_db():
+    import os
+    try:
+        os.remove('shop.db')
+        os.remove('products.db')
+        return 'База удалена. Перезапусти сервис.'
+    except:
+        return 'OK'
+
 if __name__ == '__main__':
     init_db()
     if get_products_count() == 0:
