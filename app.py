@@ -386,7 +386,8 @@ def generate_response(user_text, session_id='default'):
     if intent == 'service' and len(user_text) < 50:
         cache_response(user_text, response)
     return response
-    app = Flask(__name__)
+    
+app = Flask(__name__)
 app.secret_key = os.urandom(24)
 
 INDEX_HTML = """
