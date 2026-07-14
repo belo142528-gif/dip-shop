@@ -169,7 +169,8 @@ def cache_response(query, response):
     c.execute("INSERT OR REPLACE INTO response_cache (query_hash, response) VALUES (?,?)", (key, response))
     conn.commit()
     conn.close()
-    STOP_WORDS = {
+    
+STOP_WORDS = {
     'это', 'что', 'было', 'быть', 'есть', 'который', 'сказал',
     'ответь', 'свой', 'себя', 'тебе', 'тебя', 'мне', 'меня',
     'мой', 'моя', 'моё', 'мои', 'просто', 'ещё', 'уже', 'очень',
@@ -271,7 +272,8 @@ def get_product_context(products, limit=8):
     if not products:
         return "Нет подходящих товаров"
     return '\n'.join([format_product_text(p) for p in products[:limit]])
-    def detect_intent(text):
+    
+def detect_intent(text):
     text_lower = text.lower()
     search_keywords = ['найди', 'поищи', 'покажи', 'есть ли', 'какой', 'что есть', 
                        'хочу купить', 'интересует', 'нужен', 'подбери', 'посоветуй',
