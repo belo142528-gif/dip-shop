@@ -389,6 +389,7 @@ def generate_response(user_text, session_id='default'):
 
 app = Flask(__name__)
 app.secret_key = os.urandom(24)
+init_db()
 
 @app.route('/')
 def home():
